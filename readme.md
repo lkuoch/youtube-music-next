@@ -1,4 +1,9 @@
-# YouTube Music
+> [!IMPORTANT]
+> We're working on merging the fork into the mainstream!
+> https://github.com/th-ch/youtube-music/pull/1259
+
+
+# YouTube Music Next
 
 <div align="center">
 
