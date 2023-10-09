@@ -152,7 +152,7 @@ async function createMainWindow() {
     icon,
     width: windowSize.width,
     height: windowSize.height,
-    backgroundColor: '#000',
+    backgroundColor: '#303446',
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -173,6 +173,8 @@ async function createMainWindow() {
         ? 'hiddenInset'
         : 'default'),
     autoHideMenuBar: config.get('options.hideMenu'),
+    transparent: true,
+    opacity: 0.75,
   });
   await loadPlugins(win);
 

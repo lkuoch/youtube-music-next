@@ -190,7 +190,7 @@ starCanvas.prototype.start = function () {
   const stars = makeStars(10_000);
 
   const clear = () => {
-    this.ctx.fillStyle = '#212121';
+    this.ctx.fillStyle = '#303446';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   };
 
