@@ -1,6 +1,6 @@
 import prompt from 'custom-electron-prompt';
 
-import { clear, connect, isConnected, registerRefresh } from './back';
+import { clear, connect, isConnected, registerRefresh } from './main';
 
 import { setMenuOptions } from '../../config/plugins';
 import promptOptions from '../../providers/prompt-options';
@@ -47,11 +47,11 @@ export default (win: Electron.BrowserWindow, options: DiscordOptions, refreshMen
       },
     },
     {
-      label: 'Listen Along',
+      label: 'Play on YouTube Music',
       type: 'checkbox',
-      checked: options.listenAlong,
+      checked: options.playOnYouTubeMusic,
       click(item: Electron.MenuItem) {
-        options.listenAlong = item.checked;
+        options.playOnYouTubeMusic = item.checked;
         setMenuOptions('discord', options);
       },
     },

@@ -1,4 +1,9 @@
 import '@total-typescript/ts-reset';
+
+import { ipcRenderer as electronIpcRenderer } from 'electron';
+import is from 'electron-is';
+
+import config from './config';
 import { YoutubePlayer } from './types/youtube-player';
 
 declare global {
@@ -13,11 +18,18 @@ declare global {
   }
 
   interface Window {
+    ipcRenderer: typeof electronIpcRenderer;
+    mainConfig: typeof config;
+    electronIs: typeof is;
+    ELECTRON_RENDERER_URL: string | undefined;
     /**
      * YouTube Music internal variable (Last interaction time)
      */
     _lact: number;
     navigation: Navigation;
+    download: () => void;
+    togglePictureInPicture: () => void;
+    reload: () => void;
   }
 }
 
