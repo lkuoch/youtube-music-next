@@ -1,4 +1,6 @@
 import path from 'node:path';
+import url from 'node:url';
+import fs from 'node:fs';
 
 import { BrowserWindow, app, screen, globalShortcut, session, shell, dialog, ipcMain } from 'electron';
 import enhanceWebRequest, { BetterSession } from '@jellybrick/electron-better-web-request';
@@ -6,41 +8,22 @@ import is from 'electron-is';
 import unhandled from 'electron-unhandled';
 import { autoUpdater } from 'electron-updater';
 import electronDebug from 'electron-debug';
+import { parse } from 'node-html-parser';
 
 import config from './config';
+
 import { refreshMenu, setApplicationMenu } from './menu';
-import { fileExists, injectCSS, injectCSSAsFile } from './plugins/utils';
+import { fileExists, injectCSS, injectCSSAsFile } from './plugins/utils/main';
 import { isTesting } from './utils/testing';
 import { setUpTray } from './tray';
 import { setupSongInfo } from './providers/song-info';
 import { restart, setupAppControls } from './providers/app-controls';
 import { APP_PROTOCOL, handleProtocol, setupProtocolHandler } from './providers/protocol-handler';
 
-import adblocker from './plugins/adblocker/back';
-import albumColorTheme from './plugins/album-color-theme/back';
-import ambientMode from './plugins/ambient-mode/back';
-import blurNavigationBar from './plugins/blur-nav-bar/back';
-import captionsSelector from './plugins/captions-selector/back';
-import crossfade from './plugins/crossfade/back';
-import discord from './plugins/discord/back';
-import downloader from './plugins/downloader/back';
-import inAppMenu from './plugins/in-app-menu/back';
-import lastFm from './plugins/last-fm/back';
-import lumiaStream from './plugins/lumiastream/back';
-import lyricsGenius from './plugins/lyrics-genius/back';
-import navigation from './plugins/navigation/back';
-import noGoogleLogin from './plugins/no-google-login/back';
-import notifications from './plugins/notifications/back';
-import pictureInPicture, { setOptions as pipSetOptions } from './plugins/picture-in-picture/back';
-import preciseVolume from './plugins/precise-volume/back';
-import qualityChanger from './plugins/quality-changer/back';
-import shortcuts from './plugins/shortcuts/back';
-import sponsorBlock from './plugins/sponsorblock/back';
-import taskbarMediaControl from './plugins/taskbar-mediacontrol/back';
-import touchbar from './plugins/touchbar/back';
-import tunaObs from './plugins/tuna-obs/back';
-import videoToggle from './plugins/video-toggle/back';
-import visualizer from './plugins/visualizer/back';
+// eslint-disable-next-line import/order
+import { mainPlugins } from 'virtual:MainPlugins';
+
+import { setOptions as pipSetOptions } from './plugins/picture-in-picture/main';
 
 import youtubeMusicCSS from './youtube-music.css';
 
@@ -100,40 +83,11 @@ function onClosed() {
   mainWindow = null;
 }
 
-const mainPlugins = {
-  'adblocker': adblocker,
-  'album-color-theme': albumColorTheme,
-  'ambient-mode': ambientMode,
-  'blur-nav-bar': blurNavigationBar,
-  'captions-selector': captionsSelector,
-  'crossfade': crossfade,
-  'discord': discord,
-  'downloader': downloader,
-  'in-app-menu': inAppMenu,
-  'last-fm': lastFm,
-  'lumiastream': lumiaStream,
-  'lyrics-genius': lyricsGenius,
-  'navigation': navigation,
-  'no-google-login': noGoogleLogin,
-  'notifications': notifications,
-  'picture-in-picture': pictureInPicture,
-  'precise-volume': preciseVolume,
-  'quality-changer': qualityChanger,
-  'shortcuts': shortcuts,
-  'sponsorblock': sponsorBlock,
-  'taskbar-mediacontrol': undefined as typeof taskbarMediaControl | undefined,
-  'touchbar': undefined as typeof touchbar | undefined,
-  'tuna-obs': tunaObs,
-  'video-toggle': videoToggle,
-  'visualizer': visualizer,
-};
 export const mainPluginNames = Object.keys(mainPlugins);
 
 if (is.windows()) {
-  mainPlugins['taskbar-mediacontrol'] = taskbarMediaControl;
   delete mainPlugins['touchbar'];
 } else if (is.macOS()) {
-  mainPlugins['touchbar'] = touchbar;
   delete mainPlugins['taskbar-mediacontrol'];
 } else {
   delete mainPlugins['touchbar'];
@@ -188,6 +142,12 @@ async function createMainWindow() {
   const windowPosition: Electron.Point = config.get('window-position');
   const useInlineMenu = config.plugins.isEnabled('in-app-menu');
 
+  const defaultTitleBarOverlayOptions: Electron.TitleBarOverlayOptions = {
+    color: '#00000000',
+    symbolColor: '#ffffff',
+    height: 36,
+  };
+
   const win = new BrowserWindow({
     icon,
     width: windowSize.width,
@@ -195,11 +155,8 @@ async function createMainWindow() {
     backgroundColor: '#000',
     show: false,
     webPreferences: {
-      // TODO: re-enable contextIsolation once it can work with FFMpeg.wasm
-      // Possible bundling? https://github.com/ffmpegwasm/ffmpeg.wasm/issues/126
-      contextIsolation: false,
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegrationInSubFrames: true,
+      contextIsolation: true,
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       ...(isTesting()
         ? undefined
         : {
@@ -209,11 +166,7 @@ async function createMainWindow() {
         }),
     },
     frame: !is.macOS() && !useInlineMenu,
-    titleBarOverlay: {
-      color: '#00000000',
-      symbolColor: '#ffffff',
-      height: 36,
-    },
+    titleBarOverlay: defaultTitleBarOverlayOptions,
     titleBarStyle: useInlineMenu
       ? 'hidden'
       : (is.macOS()
@@ -223,27 +176,37 @@ async function createMainWindow() {
   });
   await loadPlugins(win);
 
+
   if (windowPosition) {
     const { x: windowX, y: windowY } = windowPosition;
     const winSize = win.getSize();
-    const displaySize
-      = screen.getDisplayNearestPoint(windowPosition).bounds;
+    const display = screen.getDisplayNearestPoint(windowPosition);
+    const scaleFactor = display.scaleFactor;
+
+    const scaledWidth = Math.floor(windowSize.width / scaleFactor);
+    const scaledHeight = Math.floor(windowSize.height / scaleFactor);
+
+    const scaledX = windowX;
+    const scaledY = windowY;
+
     if (
-      windowX + winSize[0] < displaySize.x - 8
-      || windowX - winSize[0] > displaySize.x + displaySize.width
-      || windowY < displaySize.y - 8
-      || windowY > displaySize.y + displaySize.height
+      scaledX + scaledWidth < display.bounds.x - 8 ||
+      scaledX - scaledWidth > display.bounds.x + display.bounds.width ||
+      scaledY < display.bounds.y - 8 ||
+      scaledY > display.bounds.y + display.bounds.height
     ) {
       // Window is offscreen
       if (is.dev()) {
         console.log(
-          `Window tried to render offscreen, windowSize=${String(winSize)}, displaySize=${String(displaySize)}, position=${String(windowPosition)}`,
+          `Window tried to render offscreen, windowSize=${String(winSize)}, displaySize=${String(display.bounds)}, position=${String(windowPosition)}`,
         );
       }
     } else {
-      win.setPosition(windowX, windowY);
+      win.setSize(scaledWidth, scaledHeight);
+      win.setPosition(scaledX, scaledY);
     }
   }
+
 
   if (windowMaximized) {
     win.maximize();
@@ -260,7 +223,6 @@ async function createMainWindow() {
 
   type PiPOptions = typeof config.defaultConfig.plugins['picture-in-picture'];
   const setPiPOptions = config.plugins.isEnabled('picture-in-picture')
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     ? (key: string, value: unknown) => pipSetOptions({ [key]: value })
     : () => {};
 
@@ -334,6 +296,43 @@ async function createMainWindow() {
   });
 
   removeContentSecurityPolicy();
+
+  win.webContents.on('dom-ready', async () => {
+    if (useInlineMenu) {
+      win.setTitleBarOverlay({
+        ...defaultTitleBarOverlayOptions,
+        height: Math.floor(defaultTitleBarOverlayOptions.height! * win.webContents.getZoomFactor()),
+      });
+    }
+
+    // Inject index.html file as string using insertAdjacentHTML
+    // In dev mode, get string from process.env.VITE_DEV_SERVER_URL, else use fs.readFileSync
+    if (is.dev() && process.env.ELECTRON_RENDERER_URL) {
+      // HACK: to make vite work with electron renderer (supports hot reload)
+      await win.webContents.executeJavaScript(`
+        console.log('Loading vite from dev server');
+        const viteScript = document.createElement('script');
+        viteScript.type = 'module';
+        viteScript.src = '${process.env.ELECTRON_RENDERER_URL}/@vite/client';
+        const rendererScript = document.createElement('script');
+        rendererScript.type = 'module';
+        rendererScript.src = '${process.env.ELECTRON_RENDERER_URL}/renderer.ts';
+        document.body.appendChild(viteScript);
+        document.body.appendChild(rendererScript);
+        0
+      `);
+    } else {
+      const rendererPath = path.join(__dirname, '..', 'renderer');
+      const indexHTML = parse(fs.readFileSync(path.join(rendererPath, 'index.html'), 'utf-8'));
+      const scriptSrc = indexHTML.querySelector('script')!;
+      const scriptPath = path.join(rendererPath, scriptSrc.getAttribute('src')!);
+      const scriptString = fs.readFileSync(scriptPath, 'utf-8');
+      await win.webContents.executeJavaScriptInIsolatedWorld(0, [{
+        code: scriptString + ';0',
+        url: url.pathToFileURL(scriptPath).toString(),
+      }], true);
+    }
+  });
 
   win.webContents.loadURL(urlToLoad);
 
@@ -524,7 +523,15 @@ app.on('ready', async () => {
         message: 'A new version is available',
         detail: `A new version is available and can be downloaded at ${downloadLink}`,
       };
-      dialog.showMessageBox(dialogOptions).then((dialogOutput) => {
+
+      let dialogPromise: Promise<Electron.MessageBoxReturnValue>;
+      if (mainWindow) {
+        dialogPromise = dialog.showMessageBox(mainWindow, dialogOptions);
+      } else {
+        dialogPromise = dialog.showMessageBox(dialogOptions);
+      }
+
+      dialogPromise.then((dialogOutput) => {
         switch (dialogOutput.response) {
           // Download
           case 1: {

@@ -1,11 +1,8 @@
-/* eslint-disable @typescript-eslint/require-await */
-
-import { ipcMain, ipcRenderer } from 'electron';
+import { ipcMain } from 'electron';
 
 import defaultConfig from './defaults';
 
 import { getOptions, setMenuOptions, setOptions } from './plugins';
-
 
 import { sendToFront } from '../providers/app-controls';
 import { Entries } from '../utils/type-utils';
@@ -17,39 +14,21 @@ export type OneOfDefaultConfig = typeof defaultConfig.plugins[OneOfDefaultConfig
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const activePlugins: { [key in OneOfDefaultConfigKey]?: PluginConfig<any> } = {};
 
-/**
- * [!IMPORTANT!]
- * The method is **sync** in the main process and **async** in the renderer process.
- */
-export const getActivePlugins
-  = process.type === 'renderer'
-  ? async () => ipcRenderer.invoke('get-active-plugins')
-  : () => activePlugins;
+export const getActivePlugins = () => activePlugins;
 
 if (process.type === 'browser') {
   ipcMain.handle('get-active-plugins', getActivePlugins);
 }
 
-/**
- * [!IMPORTANT!]
- * The method is **sync** in the main process and **async** in the renderer process.
- */
-export const isActive
-  = process.type === 'renderer'
-  ? async (plugin: string) =>
-    plugin in (await ipcRenderer.invoke('get-active-plugins'))
-  : (plugin: string): boolean => plugin in activePlugins;
+export const isActive = (plugin: string): boolean => plugin in activePlugins;
 
-interface PluginConfigOptions {
+export interface PluginConfigOptions {
   enableFront: boolean;
   initialOptions?: OneOfDefaultConfig;
 }
 
 /**
  * This class is used to create a dynamic synced config for plugins.
- *
- * [!IMPORTANT!]
- * The methods are **sync** in the main process and **async** in the renderer process.
  *
  * @param {string} name - The name of the plugin.
  * @param {boolean} [options.enableFront] - Whether the config should be available in front.js. Default: false.
@@ -72,7 +51,7 @@ interface PluginConfigOptions {
  */
 export type ConfigType<T extends OneOfDefaultConfigKey> = typeof defaultConfig.plugins[T];
 type ValueOf<T> = T[keyof T];
-type Mode<T, Mode extends 'r' | 'm'> = Mode extends 'r' ? Promise<T> : T;
+
 export class PluginConfig<T extends OneOfDefaultConfigKey> {
   private readonly name: string;
   private readonly config: ConfigType<T>;
@@ -180,62 +159,25 @@ export class PluginConfig<T extends OneOfDefaultConfigKey> {
   private setupFront() {
     const ignoredMethods = ['subscribe', 'subscribeAll'];
 
-    if (process.type === 'renderer') {
-      for (const [fnName, fn] of Object.entries(this) as Entries<this>) {
-        if (typeof fn !== 'function' || fn.name in ignoredMethods) {
-          return;
-        }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any,@typescript-eslint/no-unsafe-return
-        this[fnName] = (async (...args: any) => await ipcRenderer.invoke(
-          `${this.name}-config-${String(fnName)}`,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ...args,
-        )) as typeof this[keyof this];
-
-        this.subscribe = (valueName, fn: (config: ConfigType<T>) => void) => {
-          if (valueName in this.subscribers) {
-            console.error(`Already subscribed to ${String(valueName)}`);
-          }
-
-          this.subscribers[valueName] = fn;
-          ipcRenderer.on(
-            `${this.name}-config-changed-${String(valueName)}`,
-            (_, value: ConfigType<T>) => {
-              fn(value);
-            },
-          );
-          ipcRenderer.send(`${this.name}-config-subscribe`, valueName);
-        };
-
-        this.subscribeAll = (fn: (config: ConfigType<T>) => void) => {
-          ipcRenderer.on(`${this.name}-config-changed`, (_, value: ConfigType<T>) => {
-            fn(value);
-          });
-          ipcRenderer.send(`${this.name}-config-subscribe-all`);
-        };
-      }
-    } else if (process.type === 'browser') {
-      for (const [fnName, fn] of Object.entries(this) as Entries<this>) {
-        if (typeof fn !== 'function' || fn.name in ignoredMethods) {
-          return;
-        }
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument,@typescript-eslint/no-unsafe-return
-        ipcMain.handle(`${this.name}-config-${String(fnName)}`, (_, ...args) => fn(...args));
+    for (const [fnName, fn] of Object.entries(this) as Entries<this>) {
+      if (typeof fn !== 'function' || fn.name in ignoredMethods) {
+        return;
       }
 
-      ipcMain.on(`${this.name}-config-subscribe`, (_, valueName: keyof ConfigType<T>) => {
-        this.subscribe(valueName, (value) => {
-          sendToFront(`${this.name}-config-changed-${String(valueName)}`, value);
-        });
-      });
-
-      ipcMain.on(`${this.name}-config-subscribe-all`, () => {
-        this.subscribeAll((value) => {
-          sendToFront(`${this.name}-config-changed`, value);
-        });
-      });
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument,@typescript-eslint/no-unsafe-return
+      ipcMain.handle(`${this.name}-config-${String(fnName)}`, (_, ...args) => fn(...args));
     }
+
+    ipcMain.on(`${this.name}-config-subscribe`, (_, valueName: keyof ConfigType<T>) => {
+      this.subscribe(valueName, (value) => {
+        sendToFront(`${this.name}-config-changed-${String(valueName)}`, value);
+      });
+    });
+
+    ipcMain.on(`${this.name}-config-subscribe-all`, () => {
+      this.subscribeAll((value) => {
+        sendToFront(`${this.name}-config-changed`, value);
+      });
+    });
   }
 }

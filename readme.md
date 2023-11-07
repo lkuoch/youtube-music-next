@@ -207,13 +207,13 @@ Create a folder in `plugins/YOUR-PLUGIN-NAME`:
 - if you need to manipulate the BrowserWindow, create a file with the following template:
 
 ```typescript
-// file: back.ts
+// file: main.ts
 export default (win: Electron.BrowserWindow, config: ConfigType<'YOUR-PLUGIN-NAME'>) => {
   // something
 };
 ```
 
-then, register the plugin in `index.ts`:
+then, register the plugin in `src/index.ts`:
 
 ```typescript
 import yourPlugin from './plugins/YOUR-PLUGIN-NAME/back';
@@ -229,14 +229,14 @@ const mainPlugins = {
 - if you need to change the front, create a file with the following template:
 
 ```typescript
-// file: front.ts
+// file: renderer.ts
 export default (config: ConfigType<'YOUR-PLUGIN-NAME'>) => {
   // This function will be called as a preload script
   // So you can use front features like `document.querySelector`
 };
 ```
 
-then, register the plugin in `preload.ts`:
+then, register the plugin in `src/renderer.ts`:
 
 ```typescript
 import yourPlugin from './plugins/YOUR-PLUGIN-NAME/front';
@@ -247,24 +247,38 @@ const rendererPlugins: PluginMapper<'renderer'> = {
 };
 ```
 
+Finally, add the plugin to the default config file `src/config/default.ts`:
+
+```typescript
+export default {
+  // ...
+  'plugins': {
+    // ...
+    'YOUR-PLUGIN-NAME': {
+      // ...
+    },
+  },
+};
+```
+
 ### Common use cases
 
 - injecting custom CSS: create a `style.css` file in the same folder then:
 
 ```typescript
 import path from 'node:path';
-import { injectCSS } from '../utils';
+import style from './style.css';
 
-// back.ts
+// main.ts
 export default (win: Electron.BrowserWindow) => {
-  injectCSS(win.webContents, path.join(__dirname, 'style.css'));
+  injectCSS(win.webContents, style);
 };
 ```
 
 - changing the HTML:
 
 ```typescript
-// front.ts
+// renderer.ts
 export default () => {
   // Remove the login button
   document.querySelector(".sign-in-link.ytmusic-nav-bar").remove();
